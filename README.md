@@ -5,7 +5,7 @@ Script de limpieza rápida para VPS/servidores Linux (Ubuntu/Debian). Libera esp
 ## 🚀 Instalación
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/SINNOMBRE22/clean/main/clean.sh -o /usr/local/bin/clean && chmod +x /usr/local/bin/clean
+curl -sSL https://raw.githubusercontent.com/SINNOMBRE22/crean/main/clean -o /usr/local/bin/clean && chmod +x /usr/local/bin/clean
 ```
 
 ## ▶️ Uso
@@ -43,6 +43,10 @@ Vuelve a correr el comando de instalación; sobrescribe la versión anterior.
 ```bash
 sudo rm /usr/local/bin/clean
 ```
+
+## 📄 Licencia
+
+MIT — libre de usar, modificar y redistribuir. Ver [LICENSE](LICENSE).
 
 ---
 

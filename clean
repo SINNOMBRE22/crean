@@ -1,53 +1,70 @@
-# clean
+#!/bin/bash
+set -uo pipefail
 
-Script de limpieza rápida para VPS/servidores Linux (Ubuntu/Debian). Libera espacio eliminando caché de paquetes, logs antiguos, journal, temporales y papelera — con un solo comando.
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
 
-## 🚀 Instalación
+LOG_FILE="/var/log/sn-cleanup.log"
 
-```bash
-curl -sSL https://raw.githubusercontent.com/SINNOMBRE22/crean/main/clean -o /usr/local/bin/clean && chmod +x /usr/local/bin/clean
-```
+log() { echo -e "$1" | tee -a "$LOG_FILE"; }
 
-## ▶️ Uso
+# --- Chequeo de privilegios ---
+if [[ $EUID -ne 0 ]]; then
+    echo -e "${RED}[!] Este script debe ejecutarse como root (sudo).${NC}"
+    exit 1
+fi
 
-```bash
-sudo clean
-```
+# --- Espacio antes ---
+get_used_kb() { df --output=used / | tail -1; }
+SPACE_BEFORE=$(get_used_kb)
 
-Eso es todo. El script se encarga de:
+log "${GREEN}[+] Verificando espacio antes de limpiar...${NC}"
+df -h / | awk 'NR==2 {print "Espacio usado: " $3 " de " $2 " (" $5 ")"}' | tee -a "$LOG_FILE"
 
-1. Limpiar caché de paquetes APT (`autoremove`, `clean`, `autoclean`)
-2. Vaciar registros del sistema (Journald, límite 50M)
-3. Eliminar logs antiguos y comprimidos en `/var/log`
-4. Limpiar `/tmp`, `/var/tmp` y caché de usuario
-5. Vaciar la papelera del sistema
+log "\n${GREEN}[1/5] Limpiando caché de paquetes (APT)...${NC}"
+if command -v apt-get >/dev/null 2>&1; then
+    apt-get autoremove -y >> "$LOG_FILE" 2>&1
+    apt-get clean >> "$LOG_FILE" 2>&1
+    apt-get autoclean >> "$LOG_FILE" 2>&1
+else
+    log "${YELLOW}  apt-get no encontrado, saltando...${NC}"
+fi
 
-Al final muestra cuánto espacio liberó y el estado actual del disco.
+log "${GREEN}[2/5] Vaciando registros del sistema (Journald)...${NC}"
+if command -v journalctl >/dev/null 2>&1; then
+    journalctl --vacuum-size=50M >> "$LOG_FILE" 2>&1
+else
+    log "${YELLOW}  journalctl no encontrado, saltando...${NC}"
+fi
 
-## 📋 Requisitos
+log "${GREEN}[3/5] Eliminando archivos /var/log antiguos y comprimidos...${NC}"
+find /var/log -type f \( -name "*.gz" -o -name "*.1" -o -name "*.old" \) -mtime +1 -delete 2>> "$LOG_FILE"
 
-- Linux (Ubuntu / Debian recomendado)
-- Permisos de root (`sudo`)
+log "${GREEN}[4/5] Limpiando directorio /tmp y caché de usuario...${NC}"
+find /tmp -mindepth 1 -mtime +2 -delete 2>> "$LOG_FILE"
+find /var/tmp -mindepth 1 -mtime +2 -delete 2>> "$LOG_FILE"
+if [[ -n "${SUDO_USER:-}" ]]; then
+    USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+    rm -rf "${USER_HOME:?}"/.cache/* 2>> "$LOG_FILE"
+else
+    rm -rf "${HOME:?}"/.cache/* 2>> "$LOG_FILE"
+fi
 
-## ⚠️ Notas
+log "${GREEN}[5/5] Vaciando papelera y archivos temporales residuales...${NC}"
+if [[ -n "${SUDO_USER:-}" ]]; then
+    rm -rf "${USER_HOME:?}"/.local/share/Trash/* 2>> "$LOG_FILE"
+else
+    rm -rf "${HOME:?}"/.local/share/Trash/* 2>> "$LOG_FILE"
+fi
 
-- El script solo borra archivos temporales con más de 2 días de antigüedad, para evitar interferir con procesos activos.
-- Guarda un log de cada ejecución en `/var/log/sn-cleanup.log`.
+# --- Espacio después ---
+SPACE_AFTER=$(get_used_kb)
+FREED_KB=$(( SPACE_BEFORE - SPACE_AFTER ))
+FREED_MB=$(( FREED_KB / 1024 ))
 
-## 🔄 Actualizar
-
-Vuelve a correr el comando de instalación; sobrescribe la versión anterior.
-
-## 🗑️ Desinstalar
-
-```bash
-sudo rm /usr/local/bin/clean
-```
-
-## 📄 Licencia
-
-MIT — libre de usar, modificar y redistribuir. Ver [LICENSE](LICENSE).
-
----
-
-Hecho por [SinNombre](https://sinnombre.xyz) — [@SIN_NOMBRE22](https://t.me/SIN_NOMBRE22)
+log "\n${GREEN}[✔] Limpieza completada exitosamente.${NC}"
+log "${GREEN}[+] Espacio liberado: ~${FREED_MB} MB${NC}"
+log "${RED}[+] Espacio final disponible:${NC}"
+df -h / | awk 'NR==2 {print "Espacio usado: " $3 " de " $2 " (" $5 ")"}' | tee -a "$LOG_FILE"
